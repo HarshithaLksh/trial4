@@ -9,8 +9,22 @@ pipeline {
     stage('Prepare') {
       steps {
         sh '''
+          # make sure scripts are executable and prepare dist
           chmod +x app/greet.sh tests/test_greet.sh || true
           mkdir -p dist
+        '''
+      }
+    }
+
+    stage('Run & Capture Greeting') {
+      steps {
+        sh '''
+          # run the app and save stdout to a file that becomes an artifact
+          NAME_ARG="${NAME_ARG:-CI}"
+          ./app/greet.sh "${NAME_ARG}" > dist/greeting.txt
+          echo "Saved greeting to dist/greeting.txt"
+          echo "Contents:"
+          cat dist/greeting.txt
         '''
       }
     }
@@ -30,8 +44,8 @@ pipeline {
           echo "Packaging artifact..."
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           ART=dist/hello-ci-mini-${TIMESTAMP}.tar.gz
-          tar -czf "${ART}" app README.md
-          echo "Created ${ART}"
+          tar -czf "${ART}" dist greeting.txt app README.md || true
+          echo "${ART} created"
           ls -l dist || true
         '''
       }
@@ -39,11 +53,13 @@ pipeline {
 
     stage('Archive artifact') {
       steps {
+        // archive both the greeting file and any packaged tarballs
         archiveArtifacts artifacts: 'dist/**', fingerprint: true
       }
     }
 
     stage('Upload to Nexus (raw)') {
+      when { expression { return env.NEXUS_UPLOAD == 'true' } }
       steps {
         withCredentials([usernamePassword(credentialsId: 'nexus-http-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PW')]) {
           sh '''
@@ -67,4 +83,4 @@ pipeline {
     always { cleanWs() }
   }
 }
- 
+
